@@ -92,7 +92,7 @@ stages:
   - deployment: deploy_production
     environment: production       # ← approbation + branch control configurés en phase 0
     pool:
-      vmImage: ubuntu-latest
+      vmImage: 'ubuntu-24.04'
     strategy:
       runOnce:
         deploy:
