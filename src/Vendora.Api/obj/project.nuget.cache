@@ -1,0 +1,11 @@
+{
+  "version": 2,
+  "dgSpecHash": "RpySRs2zc1o=",
+  "success": true,
+  "projectFilePath": "D:\\labs\\vendora-lab\\src\\Vendora.Api\\Vendora.Api.csproj",
+  "expectedPackageFiles": [
+    "C:\\Users\\pc-ml\\.nuget\\packages\\microsoft.aspnetcore.openapi\\10.0.14\\microsoft.aspnetcore.openapi.10.0.14.nupkg.sha512",
+    "C:\\Users\\pc-ml\\.nuget\\packages\\microsoft.openapi\\2.12.2\\microsoft.openapi.2.12.2.nupkg.sha512"
+  ],
+  "logs": []
+}
