@@ -25,7 +25,7 @@ stages:
   jobs:
   - job: build
     pool:
-      vmImage: ubuntu-latest
+      vmImage: 'ubuntu-24.04' 
     steps:
     - task: UseDotNet@2
       displayName: 'Installer .NET (version de global.json)'
@@ -68,7 +68,7 @@ stages:
   - deployment: deploy_staging
     environment: staging
     pool:
-      vmImage: ubuntu-latest
+      vmImage: 'ubuntu-24.04' 
     strategy:
       runOnce:
         deploy:
