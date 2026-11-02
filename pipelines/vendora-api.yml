@@ -1,31 +1,34 @@
-# Pipeline de l'API Vendora : build → tests → staging (dev) / production (main)
+# Pipeline de l'API Vendora : build → tests → (migrations SQL + déploiement) staging / production
 
 trigger:
   branches:
-    include: [dev, main]          # un merge dans dev ou main lance le pipeline
+    include: [dev, main]
   paths:
-    include:                      # seulement si l'API ou ses tests changent
+    include:
       - src/Vendora.Api
       - tests/Vendora.Api.Tests
+      - database/migrations          # ← NOUVEAU : un nouveau script SQL relance le pipeline
       - pipelines/vendora-api.yml
 
 pr:
   branches:
-    include: [dev, main]          # une PR vers dev ou main lance build + tests
+    include: [dev, main]
 
 variables:
   buildConfiguration: 'Release'
   azureServiceConnection: 'sc-azure-vendora-lab'
   appName: 'app-vendora-api-lab'
   resourceGroup: 'rg-vendora-lab'
+  sqlServer: 'sql-vendora-lab.database.windows.net'
+  agentImage: 'ubuntu-24.04'
 
 stages:
-# ═══════════════ 1. BUILD : compiler, tester, emballer ═══════════════
+# ═══════════════ 1. BUILD ═══════════════
 - stage: Build
   jobs:
   - job: build
     pool:
-      vmImage: 'ubuntu-24.04' 
+      vmImage: ${{ variables.agentImage }}
     steps:
     - task: UseDotNet@2
       displayName: 'Installer .NET (version de global.json)'
@@ -58,21 +61,41 @@ stages:
 
     - publish: '$(Build.ArtifactStagingDirectory)/vendora-api.zip'
       artifact: api
-      displayName: "Publier l'artifact"
+      displayName: "Publier l'artifact API"
 
-# ═══════════════ 2. STAGING : seulement depuis dev ═══════════════
+    - publish: 'database/migrations'             # ← NOUVEAU
+      artifact: db
+      displayName: 'Publier les scripts SQL'
+
+# ═══════════════ 2. STAGING ═══════════════
 - stage: Staging
   dependsOn: Build
   condition: and(succeeded(), eq(variables['Build.SourceBranch'], 'refs/heads/dev'), ne(variables['Build.Reason'], 'PullRequest'))
+  variables:
+    dbName: 'sqldb-vendora-staging'
   jobs:
   - deployment: deploy_staging
     environment: staging
     pool:
-      vmImage: 'ubuntu-24.04' 
+      vmImage: ${{ variables.agentImage }}
     strategy:
       runOnce:
         deploy:
           steps:
+          - task: AzureCLI@2                       # ← NOUVEAU : migrations SQL
+            displayName: 'Migrations SQL (staging)'
+            inputs:
+              azureSubscription: $(azureServiceConnection)
+              scriptType: pscore
+              scriptLocation: inlineScript
+              inlineScript: |
+                $token = az account get-access-token --resource https://database.windows.net/ --query accessToken -o tsv
+                Install-Module SqlServer -Force -Scope CurrentUser -AllowClobber
+                Get-ChildItem "$(Pipeline.Workspace)/db/*.sql" | Sort-Object Name | ForEach-Object {
+                  Write-Host "Exécution de $($_.Name)"
+                  Invoke-Sqlcmd -ServerInstance '$(sqlServer)' -Database '$(dbName)' -AccessToken $token -InputFile $_.FullName
+                }
+
           - task: AzureWebApp@1
             displayName: 'Déployer sur le slot staging'
             inputs:
@@ -84,19 +107,35 @@ stages:
               slotName: staging
               package: '$(Pipeline.Workspace)/api/vendora-api.zip'
 
-# ═══════════════ 3. PRODUCTION : seulement depuis main ═══════════════
+# ═══════════════ 3. PRODUCTION ═══════════════
 - stage: Production
   dependsOn: Build
   condition: and(succeeded(), eq(variables['Build.SourceBranch'], 'refs/heads/main'), ne(variables['Build.Reason'], 'PullRequest'))
+  variables:
+    dbName: 'sqldb-vendora-prod'
   jobs:
   - deployment: deploy_production
-    environment: production       # ← approbation + branch control configurés en phase 0
+    environment: production
     pool:
-      vmImage: 'ubuntu-24.04'
+      vmImage: ${{ variables.agentImage }}
     strategy:
       runOnce:
         deploy:
           steps:
+          - task: AzureCLI@2
+            displayName: 'Migrations SQL (production)'
+            inputs:
+              azureSubscription: $(azureServiceConnection)
+              scriptType: pscore
+              scriptLocation: inlineScript
+              inlineScript: |
+                $token = az account get-access-token --resource https://database.windows.net/ --query accessToken -o tsv
+                Install-Module SqlServer -Force -Scope CurrentUser -AllowClobber
+                Get-ChildItem "$(Pipeline.Workspace)/db/*.sql" | Sort-Object Name | ForEach-Object {
+                  Write-Host "Exécution de $($_.Name)"
+                  Invoke-Sqlcmd -ServerInstance '$(sqlServer)' -Database '$(dbName)' -AccessToken $token -InputFile $_.FullName
+                }
+
           - task: AzureWebApp@1
             displayName: 'Déployer en production'
             inputs:
