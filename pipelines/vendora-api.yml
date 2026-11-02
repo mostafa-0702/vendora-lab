@@ -1,0 +1,106 @@
+# Pipeline de l'API Vendora : build → tests → staging (dev) / production (main)
+
+trigger:
+  branches:
+    include: [dev, main]          # un merge dans dev ou main lance le pipeline
+  paths:
+    include:                      # seulement si l'API ou ses tests changent
+      - src/Vendora.Api
+      - tests/Vendora.Api.Tests
+      - pipelines/vendora-api.yml
+
+pr:
+  branches:
+    include: [dev, main]          # une PR vers dev ou main lance build + tests
+
+variables:
+  buildConfiguration: 'Release'
+  azureServiceConnection: 'sc-azure-vendora-lab'
+  appName: 'app-vendora-api-lab'
+  resourceGroup: 'rg-vendora-lab'
+
+stages:
+# ═══════════════ 1. BUILD : compiler, tester, emballer ═══════════════
+- stage: Build
+  jobs:
+  - job: build
+    pool:
+      vmImage: ubuntu-latest
+    steps:
+    - task: UseDotNet@2
+      displayName: 'Installer .NET (version de global.json)'
+      inputs:
+        useGlobalJson: true
+
+    - script: dotnet build Vendora.slnx --configuration $(buildConfiguration)
+      displayName: 'Compiler'
+
+    - task: DotNetCoreCLI@2
+      displayName: 'Lancer les tests'
+      inputs:
+        command: test
+        projects: 'tests/**/*.csproj'
+        arguments: '--configuration $(buildConfiguration) --no-build'
+        publishTestResults: true
+
+    - script: >
+        dotnet publish src/Vendora.Api
+        --configuration $(buildConfiguration)
+        --output $(Build.ArtifactStagingDirectory)/api
+      displayName: "Préparer l'API (sans les tests)"
+
+    - task: ArchiveFiles@2
+      displayName: 'Zipper'
+      inputs:
+        rootFolderOrFile: '$(Build.ArtifactStagingDirectory)/api'
+        includeRootFolder: false
+        archiveFile: '$(Build.ArtifactStagingDirectory)/vendora-api.zip'
+
+    - publish: '$(Build.ArtifactStagingDirectory)/vendora-api.zip'
+      artifact: api
+      displayName: "Publier l'artifact"
+
+# ═══════════════ 2. STAGING : seulement depuis dev ═══════════════
+- stage: Staging
+  dependsOn: Build
+  condition: and(succeeded(), eq(variables['Build.SourceBranch'], 'refs/heads/dev'), ne(variables['Build.Reason'], 'PullRequest'))
+  jobs:
+  - deployment: deploy_staging
+    environment: staging
+    pool:
+      vmImage: ubuntu-latest
+    strategy:
+      runOnce:
+        deploy:
+          steps:
+          - task: AzureWebApp@1
+            displayName: 'Déployer sur le slot staging'
+            inputs:
+              azureSubscription: $(azureServiceConnection)
+              appType: webAppLinux
+              appName: $(appName)
+              deployToSlotOrASE: true
+              resourceGroupName: $(resourceGroup)
+              slotName: staging
+              package: '$(Pipeline.Workspace)/api/vendora-api.zip'
+
+# ═══════════════ 3. PRODUCTION : seulement depuis main ═══════════════
+- stage: Production
+  dependsOn: Build
+  condition: and(succeeded(), eq(variables['Build.SourceBranch'], 'refs/heads/main'), ne(variables['Build.Reason'], 'PullRequest'))
+  jobs:
+  - deployment: deploy_production
+    environment: production       # ← approbation + branch control configurés en phase 0
+    pool:
+      vmImage: ubuntu-latest
+    strategy:
+      runOnce:
+        deploy:
+          steps:
+          - task: AzureWebApp@1
+            displayName: 'Déployer en production'
+            inputs:
+              azureSubscription: $(azureServiceConnection)
+              appType: webAppLinux
+              appName: $(appName)
+              package: '$(Pipeline.Workspace)/api/vendora-api.zip'
