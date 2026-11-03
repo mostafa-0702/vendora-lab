@@ -123,6 +123,8 @@ stages:
         deploy:
           steps:
           - script: |
+              echo "=== Attente de la fin du cloud-init (installation des outils) ==="
+              cloud-init status --wait
               echo "=== Agent ==="
               echo "Nom de l'agent : $(Agent.Name)"
               echo "IP privée : $(hostname -I)"
