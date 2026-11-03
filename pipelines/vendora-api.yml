@@ -117,11 +117,22 @@ stages:
   - deployment: deploy_production
     environment: production
     pool:
-      vmImage: ${{ variables.agentImage }}
+      name: pool-vendora-vmss                   # ← NOTRE scale set, dans le VNet
     strategy:
       runOnce:
         deploy:
           steps:
+          - script: |
+              echo "=== Agent ==="
+              echo "Nom de l'agent : $(Agent.Name)"
+              echo "IP privée : $(hostname -I)"
+              echo "=== Résolution DNS du SCM de la prod ==="
+              getent hosts app-vendora-api-lab-defqejesg3hvfuem.scm.francecentral-01.azurewebsites.net
+              echo "=== Outils ==="
+              az version --output table || { echo "##vso[task.logissue type=error]Azure CLI absent"; exit 1; }
+              pwsh --version || { echo "##vso[task.logissue type=error]PowerShell absent"; exit 1; }
+            displayName: "Vérifier l'agent, le DNS privé et les outils"
+
           - task: AzureCLI@2
             displayName: 'Migrations SQL (production)'
             inputs:
