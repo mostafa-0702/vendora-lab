@@ -4,7 +4,7 @@ BEGIN
     CREATE TABLE dbo.Products (
         Id        INT IDENTITY(1,1) NOT NULL CONSTRAINT PK_Products PRIMARY KEY,
         Name      NVARCHAR(100)     NOT NULL,
-        Price     DECIMAL(10,2)     NOT NULL CONSTRAINT CK_Products_Price CHECK (Price >= 0),
+        Price     DECIMAL(11,1)     NOT NULL CONSTRAINT CK_Products_Price CHECK (Price >= 0),
         CreatedAt DATETIME2         NOT NULL CONSTRAINT DF_Products_CreatedAt DEFAULT SYSUTCDATETIME()
     );
 END
