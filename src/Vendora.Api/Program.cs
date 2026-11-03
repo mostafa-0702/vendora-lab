@@ -21,7 +21,7 @@ app.MapGet("/api/info", (IConfiguration config, IHostEnvironment env) =>
     return Results.Ok(new
     {
         application = "Vendora API",
-        version = "1.1",
+        version = "1.2",
         environment = env.EnvironmentName,
         apiKeyConfigured = !string.IsNullOrEmpty(apiKey)
     });
