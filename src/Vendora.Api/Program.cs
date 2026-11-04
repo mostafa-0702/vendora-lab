@@ -4,6 +4,16 @@ using Microsoft.Data.SqlClient;
 var builder = WebApplication.CreateBuilder(args);
 builder.Services.AddOpenApi();
 
+// ─────────── CORS : les sites autorisés à appeler l'API depuis un navigateur ───────────
+var allowedOrigins = builder.Configuration.GetSection("Cors:AllowedOrigins").Get<string[]>() ?? [];
+builder.Services.AddCors(options =>
+{
+    options.AddPolicy("Front", policy => policy
+        .WithOrigins(allowedOrigins)
+        .WithMethods("GET", "POST", "PUT")
+        .WithHeaders("Content-Type"));
+});
+
 var app = builder.Build();
 
 if (app.Environment.IsDevelopment())
@@ -12,6 +22,7 @@ if (app.Environment.IsDevelopment())
 }
 
 app.UseHttpsRedirection();
+app.UseCors("Front");
 
 app.MapGet("/health", () => Results.Ok("OK"));
 
