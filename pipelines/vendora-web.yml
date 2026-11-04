@@ -1,0 +1,141 @@
+# Pipeline du front React (Vite) - vendora-web
+trigger:
+  branches:
+    include:
+      - dev
+      - main
+  paths:
+    include:
+      - src/vendora-web
+      - pipelines/vendora-web.yml
+
+pr:
+  branches:
+    include:
+      - dev
+      - main
+  paths:
+    include:
+      - src/vendora-web
+      - pipelines/vendora-web.yml
+
+variables:
+  azureServiceConnection: 'sc-azure-vendora-lab'
+  resourceGroup: 'rg-vendora-lab'
+  webAppName: 'app-vendora-web-lab'
+  webDir: 'src/vendora-web'
+  nodeVersion: '22.x'
+  agentImage: 'ubuntu-24.04'
+
+stages:
+# ─────────────────────────── BUILD ───────────────────────────
+- stage: Build
+  jobs:
+  - job: BuildWeb
+    pool:
+      vmImage: ${{ variables.agentImage }}
+    steps:
+    - task: NodeTool@0
+      displayName: 'Installer Node $(nodeVersion)'
+      inputs:
+        versionSpec: '$(nodeVersion)'
+
+    - script: npm ci
+      displayName: 'npm ci (installation exacte depuis package-lock.json)'
+      workingDirectory: $(webDir)
+
+    - script: npm run lint
+      displayName: 'Lint (ESLint)'
+      workingDirectory: $(webDir)
+
+    - script: npm run test --if-present -- --run
+      displayName: 'Tests (si présents)'
+      workingDirectory: $(webDir)
+
+    # Build STAGING -> lit .env.staging
+    - script: npm run build -- --mode staging
+      displayName: 'Build staging'
+      workingDirectory: $(webDir)
+
+    - task: ArchiveFiles@2
+      displayName: 'Zip dist staging'
+      inputs:
+        rootFolderOrFile: '$(webDir)/dist'
+        includeRootFolder: false
+        archiveType: zip
+        archiveFile: '$(Build.ArtifactStagingDirectory)/staging/vendora-web.zip'
+
+    # Build PRODUCTION -> lit .env.production
+    - script: npm run build
+      displayName: 'Build production'
+      workingDirectory: $(webDir)
+
+    - task: ArchiveFiles@2
+      displayName: 'Zip dist production'
+      inputs:
+        rootFolderOrFile: '$(webDir)/dist'
+        includeRootFolder: false
+        archiveType: zip
+        archiveFile: '$(Build.ArtifactStagingDirectory)/production/vendora-web.zip'
+
+    - publish: '$(Build.ArtifactStagingDirectory)/staging'
+      artifact: web-staging
+      displayName: 'Publier artefact web-staging'
+
+    - publish: '$(Build.ArtifactStagingDirectory)/production'
+      artifact: web-production
+      displayName: 'Publier artefact web-production'
+
+# ─────────────────────────── STAGING ───────────────────────────
+- stage: Staging
+  dependsOn: Build
+  condition: and(succeeded(), eq(variables['Build.SourceBranch'], 'refs/heads/dev'), ne(variables['Build.Reason'], 'PullRequest'))
+  jobs:
+  - deployment: DeployWebStaging
+    environment: staging
+    pool:
+      vmImage: ${{ variables.agentImage }}
+    strategy:
+      runOnce:
+        deploy:
+          steps:
+          - download: current
+            artifact: web-staging
+
+          - task: AzureWebApp@1
+            displayName: 'Déployer sur slot staging'
+            inputs:
+              azureSubscription: '$(azureServiceConnection)'
+              appType: webAppLinux
+              appName: '$(webAppName)'
+              deployToSlotOrASE: true
+              resourceGroupName: '$(resourceGroup)'
+              slotName: staging
+              package: '$(Pipeline.Workspace)/web-staging/vendora-web.zip'
+              startUpCommand: 'pm2 serve /home/site/wwwroot --no-daemon --spa' 
+
+# ─────────────────────────── PRODUCTION ───────────────────────────
+- stage: Production
+  dependsOn: Build
+  condition: and(succeeded(), eq(variables['Build.SourceBranch'], 'refs/heads/main'), ne(variables['Build.Reason'], 'PullRequest'))
+  jobs:
+  - deployment: DeployWebProd
+    environment: production
+    pool:
+      vmImage: ${{ variables.agentImage }}
+    strategy:
+      runOnce:
+        deploy:
+          steps:
+          - download: current
+            artifact: web-production
+
+          - task: AzureWebApp@1
+            displayName: 'Déployer en production'
+            inputs:
+              azureSubscription: '$(azureServiceConnection)'
+              appType: webAppLinux
+              appName: '$(webAppName)'
+              package: '$(Pipeline.Workspace)/web-production/vendora-web.zip'
+              startUpCommand: 'pm2 serve /home/site/wwwroot --no-daemon --spa'
+              # ───────────────────────────TEST
