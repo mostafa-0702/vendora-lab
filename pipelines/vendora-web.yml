@@ -112,6 +112,7 @@ stages:
               resourceGroupName: '$(resourceGroup)'
               slotName: staging
               package: '$(Pipeline.Workspace)/web-staging/vendora-web.zip'
+              startUpCommand: 'pm2 serve /home/site/wwwroot --no-daemon --spa' 
 
 # ─────────────────────────── PRODUCTION ───────────────────────────
 - stage: Production
@@ -136,5 +137,5 @@ stages:
               appType: webAppLinux
               appName: '$(webAppName)'
               package: '$(Pipeline.Workspace)/web-production/vendora-web.zip'
-
+              startUpCommand: 'pm2 serve /home/site/wwwroot --no-daemon --spa'
               # ───────────────────────────TEST
