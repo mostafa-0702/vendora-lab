@@ -136,3 +136,5 @@ stages:
               appType: webAppLinux
               appName: '$(webAppName)'
               package: '$(Pipeline.Workspace)/web-production/vendora-web.zip'
+
+              # ───────────────────────────TEST
